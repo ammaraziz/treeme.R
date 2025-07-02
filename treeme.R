@@ -1,16 +1,9 @@
 #!/usr/bin/env Rscript
 options(warn=-1)
-#packages = c("optparse", "crayon", "ggtree", "ggplot2", "treeio", "glue", "cowplot")
 
 # if taxa labels are bunching up, use a bigger output
 
-suppressPackageStartupMessages(library(optparse))
-suppressPackageStartupMessages(library(crayon))
-suppressPackageStartupMessages(library(ggtree))
-suppressPackageStartupMessages(library(ggplot2))
-suppressPackageStartupMessages(library(treeio))
-suppressPackageStartupMessages(library(glue))
-library(grid)
+pacman::p_load(optparse, crayon, ggtree, ggplot2, treeio, glue, grid, purrr, cowplot, dplyr)
 
 usage = "Create pretty tree using ggtree.
   Usage:
@@ -22,9 +15,9 @@ usage = "Create pretty tree using ggtree.
               -p [VARIABLE] \
               -g [TITLE]
 
-  -t,  --tree         path and name of nhx tree to ingest.
+  -t,  --tree         nhx tree to ingest.
   -o,  --output       output name and path of graphics output (will be a pdf).
-  -c   --clades       tsv file containing clade_name\\tnode_number.
+  -c   --clades       tsv file containing clade_name\tnode_number.
   -m   --metaFile     tsv meta-file containing meta data.
                       First column must be taxa names and must match exactly to tree.
 
@@ -81,10 +74,12 @@ parser = OptionParser(
                 -p [VARIABLE]
                 -s [A4l]
                 -g [TITLE]",
-                "Generate grahical tree with ggtree",
+                "Plot phylotree with ggtree",
                 sep="\n"),
   epilogue = "All options are required (maybe)",
-  option_list = option_list)
+  option_list = option_list
+  )
+
 ##########################################
 ########## Parameter Validation ##########
 ##########################################
@@ -134,11 +129,11 @@ tryCatch(
 tryCatch(
   expr = {
     tree = read.beast(arguments$tree)
-    message(crayon::green("Success: Tree file was read."))
+    message(green("Success: Tree file was read."))
   },
   error = function(e){
     print(e)
-    stop(crayon::bgCyan("Reading tree file. Is it nhx?"))
+    stop(bgCyan("Reading tree file. Is it nhx?"))
   }
 )
 
@@ -147,22 +142,22 @@ tryCatch(
   expr = {
     meta = read.delim(arguments$metaFile, sep = '\t', na.strings = '', stringsAsFactors = F)
     cladesFile = read.delim(arguments$cladesFile, sep = "\t", na.strings = '', stringsAsFactors = F)
-    message(crayon::green("Success: Meta file read."))
+    message(green("Success: Meta file read."))
   },
   error = function(e){
     print(e)
-    stop(crayon::bgCyan("Unable to read in meta or clade file.
+    stop(bgCyan("Unable to read in meta or clade file.
                      Do they exist and is the path correct?"))
   }
 )
-#
+
 # meta file variables match cli input
 if (!(arguments$colorTaxa %in% names(meta))) {
-  stop(crayon::bgCyan("CHECK YOUR META FILE. Check if this header is in the meta file:", arguments$colorTaxa))
+  stop(bgCyan("CHECK YOUR META FILE. Check if this header is in the meta file:", arguments$colorTaxa))
 }
 
 if (!(arguments$tipPoint %in% names(meta))) {
-  stop(crayon::bgCyan("CHECK YOUR META FILE. Check if this header is in the meta file:", arguments$tipPoint))
+  stop(bgCyan("CHECK YOUR META FILE. Check if this header is in the meta file:", arguments$tipPoint))
 }
 
 ###############################################
@@ -184,19 +179,19 @@ check_taxa_names = function(tree_labs, meta_desig) {
   # meta_desig :  meta[, 'designation']
   mismatch <- tree_labs[!tree_labs %in% meta_desig]
   if (!length(mismatch)) {
-    message(crayon::green("Good: All tree tip labels present in meta file"))
+    message(green("Good: All tree tip labels present in meta file"))
   } else {
     message(
-      crayon::yellow("\n"),
-      crayon::yellow("Warning - the following tip labels not present in meta file:\n"),
-      crayon::yellow(paste("\t", mismatch, collapse = "\n")),
-      crayon::yellow("\n")
+      yellow("\n"),
+      yellow("Warning - the following tip labels not present in meta file:\n"),
+      yellow(paste("\t", mismatch, collapse = "\n")),
+      yellow("\n")
     )
   }
 }
 
 # clade generator
-add_clades = function(cladesFile, tree_data){
+add_clades = function(cladesFile, tree_data, plot_dim_x){
   # clade file must be a dataframe with vars:
   #   node_number
   #   clade_name
@@ -226,7 +221,7 @@ add_clades = function(cladesFile, tree_data){
     return(node)
   }
 
-  cladesFile$node_number = apply(cladesFile %>% dplyr::select(mutations), 1, get_clade_node, tree_data)
+  cladesFile$node_number = apply(cladesFile %>% select(mutations), 1, get_clade_node, tree_data)
   cladesFile = cladesFile[complete.cases(cladesFile),]
 
   num_clade = nrow(cladesFile)
@@ -236,7 +231,7 @@ add_clades = function(cladesFile, tree_data){
   offset_values = seq(from, to, by = min_offset)[1:3]
   offset = rep(offset_values, ceiling(num_clade/3))[1:num_clade]
 
-  return(purrr::pmap(list(
+  return(pmap(list(
     as.integer(cladesFile$node_number),
     cladesFile$clade_name,
     offset),
@@ -254,7 +249,7 @@ get_paper_size = function(size_argument) {
     "A4l" = c(297, 210)
   )
   if (!any(size_argument %in% names(paperSizes)) ){
-    stop(crayon::red("Paper size unknown. Options:  A3p A3l A4p A4l"))
+    stop(red("Paper size unknown. Options:  A3p A3l A4p A4l"))
   }
   return(paperSizes[[size_argument]])
 }
@@ -269,7 +264,7 @@ cat('Input arguments', '\n',
      '\tTitle: ', {arguments$title},'\n',
      '\tOutput Size: ', {arguments$paperSize}, '\n'
      )
-message(crayon::green("~~~All Checks Okay - Plotting tree~~~"))
+message(green("~~~All Checks Okay - Plotting tree~~~"))
 
 ##############################################
 ################ Tree plotting ###############
@@ -278,18 +273,11 @@ message(crayon::green("~~~All Checks Okay - Plotting tree~~~"))
 cols_file = read.delim(file = "scripts/colors.tsv", sep = "\t")
 shapes_file = read.delim(file = "scripts/shapes.tsv", sep = "\t")
 
-categories = cols_file$categories
-color_pal = cols_file$color_pal
-shapes_type = shapes_file$shapes_type
-shape_colors = shapes_file$shape_colors
-shape_cats = shapes_file$shape_cats
-names(shapes_type) = shape_cats
+names(shapes_file$shapes_type) = shapes_file$shape_cats
 
 check_taxa_names(tree@phylo$tip.label, meta[, "strain"])
 output_size = get_paper_size(arguments$paperSize)
 
-colorTaxa = arguments$colorTaxa
-tipPoint = arguments$tipPoint
 tipLabSize = calc_text_size(height = output_size[[1]],
                             lines = tree@phylo$Nnode,
                             buffer = 15)
@@ -297,34 +285,34 @@ tipLabSize = calc_text_size(height = output_size[[1]],
 treeplot = ggtree(tree)  %<+% meta +
   geom_tiplab(geom = "text",
               size = tipLabSize,
-              aes(color = !! sym(colorTaxa)),
-              key_glyph = cowplot::rectangle_key_glyph(fill = color,
+              aes(color = !! sym(arguments$colorTaxa)),
+              key_glyph = rectangle_key_glyph(fill = color,
                                                        padding = margin(0, 0, 0, 0),
                                                        color = 'black',
                                                        linetype = 3),
               offset = 0.00009,
               family = "Arial") +
 
-  geom_tippoint(size = tipLabSize, aes(fill = !! sym(tipPoint),
-                                shape = !! sym(tipPoint))) +
+  geom_tippoint(size = tipLabSize, aes(fill = !! sym(arguments$tipPoint),
+                                shape = !! sym(arguments$tipPoint))) +
 
-  scale_color_manual(colorTaxa,
-                     limits = categories,
-                     values = color_pal,
+  scale_color_manual(arguments$colorTaxa,
+                     limits = cols_file$categories,
+                     values = cols_file$color_pal,
                      na.value = "#000000") +
 
-  scale_fill_manual(tipPoint,
-                    values = shape_colors,
-                    limits =  shape_cats,
+  scale_fill_manual(arguments$tipPoint,
+                    values = shapes_file$shape_colors,
+                    limits =  shapes_file$shape_cats,
                     na.value = "#000000") +
 
   scale_shape_manual("Legend",
-                     values = shapes_type,
-                     breaks = shapes_type) +
+                     values = shapes_file$shapes_type,
+                     breaks = shapes_file$shapes_type) +
 
   guides(fill = guide_legend(override.aes = list(size = tipLabSize * 1.5,
                                                  label = "",
-                                                 shape = shapes_type))) +
+                                                 shape = shapes_file$shapes_type))) +
   guides(color = guide_legend(override.aes = list(size = tipLabSize * 5,
                                                  label = "\u25A0",
                                                  linetype = 3))) +
@@ -343,8 +331,7 @@ treeplot = ggtree(tree)  %<+% meta +
         plot.subtitle = element_text(hjust = 0.02, vjust = -12, size = 20))
 
 # mutations on branches
-plot_dim_y <- ggplot_build(treeplot)$layout$panel_scales_y[[1]]$range$range[1]
-nudge = plot_dim_y/3
+nudge <- ggplot_build(treeplot)$layout$panel_scales_y[[1]]$range$range[1] / 3
 
 treeplot = treeplot +
   geom_text(aes(x = branch,  label = aa_muts),
@@ -354,15 +341,13 @@ treeplot = treeplot +
 # Fix tip label clipping
 plot_dim_x <- ggplot_build(treeplot)$layout$panel_scales_x[[1]]$range$range[2]
 
-
 treeplot = treeplot +
   coord_cartesian(clip = 'off', expand = FALSE) +
   xlim(NA, ((0.40 * plot_dim_x) + plot_dim_x))
 
 # add clades
+treeplot = treeplot + add_clades(cladesFile, tree@data, plot_dim_x)
 
-treeplot = treeplot + add_clades(cladesFile, tree@data)
-#
 ggsave(arguments$output,
        plot = treeplot,
        device = cairo_pdf,
@@ -379,4 +364,4 @@ ggsave(arguments$output,
 # treeplot
 # dev.off()
 
-message(crayon::green("Done! Plotting was a success"))
+message(green("Done! Plotting was a success"))
